@@ -26,7 +26,7 @@ from .const import (
     QUERIES,
 )
 from .parse import Host, Overview, build_hosts, build_overview
-from .unifi import UnifiDevice, collect_unifi_devices, match_hosts
+from .links import LinkedDevice, find_links
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -39,7 +39,7 @@ class Snapshot:
 
     hosts: dict[str, Host] = field(default_factory=dict)
     overview: Overview = field(default_factory=Overview)
-    unifi: dict[str, UnifiDevice] = field(default_factory=dict)
+    links: dict[str, list[LinkedDevice]] = field(default_factory=dict)
 
 
 class PrometheusHostsCoordinator(DataUpdateCoordinator[Snapshot]):
@@ -61,6 +61,7 @@ class PrometheusHostsCoordinator(DataUpdateCoordinator[Snapshot]):
         self._last_seen: dict[str, float] = {}
         self._device_sig: dict[str, tuple] = {}
         self._device_ids: dict[str, str] = {}
+        self._linked_count = -1
         # Host keys whose device was removed in the last update; platforms forget them.
         self.removed: set[str] = set()
 
@@ -84,11 +85,18 @@ class PrometheusHostsCoordinator(DataUpdateCoordinator[Snapshot]):
             raise UpdateFailed(str(err)) from err
 
         hosts = build_hosts(results, alerts)
-        unifi = match_hosts(self.hass, hosts, collect_unifi_devices(self.hass))
-        self._sync_devices(hosts, unifi)
-        return Snapshot(hosts=hosts, overview=build_overview(results, am_alerts), unifi=unifi)
+        links = find_links(self.hass, hosts)
+        if len(links) != self._linked_count:
+            self._linked_count = len(links)
+            per_domain: dict[str, int] = {}
+            for devs in links.values():
+                for dev in devs:
+                    per_domain[dev.domain] = per_domain.get(dev.domain, 0) + 1
+            _LOGGER.info("Linked devices: %d of %d hosts %s", len(links), len(hosts), per_domain)
+        self._sync_devices(hosts, links)
+        return Snapshot(hosts=hosts, overview=build_overview(results, am_alerts), links=links)
 
-    def _sync_devices(self, hosts: dict[str, Host], unifi: dict[str, UnifiDevice]) -> None:
+    def _sync_devices(self, hosts: dict[str, Host], links: dict[str, list[LinkedDevice]]) -> None:
         """Create/update one device per host, hypervisors first, and drop stale ones."""
         reg = dr.async_get(self.hass)
         now = dt_util.utcnow().timestamp()
@@ -116,8 +124,8 @@ class PrometheusHostsCoordinator(DataUpdateCoordinator[Snapshot]):
             self._last_seen[h.key] = now
             via = h.hyperv if h.hyperv in hosts and h.hyperv != h.key else None
             via_id = self._device_ids.get(via) if via else None
-            unifi_dev = unifi.get(h.key)
-            url = f"homeassistant://config/devices/device/{unifi_dev.device_id}" if unifi_dev else None
+            linked = links.get(h.key)
+            url = f"homeassistant://config/devices/device/{linked[0].device_id}" if linked else None
             sig = (h.name, h.kind, h.site, via_id, url)
             if self._device_sig.get(h.key) == sig:
                 continue

@@ -15,7 +15,13 @@ after a grace period.
 | CPU / RAM / Disk | sensor (%) | from node_exporter or windows_exporter, only when available |
 | Galera-Knoten | sensor | Galera cluster size (MariaDB hosts) |
 
-**UniFi:** if the UniFi Controller integration (`unifi_controller`) is installed, each host is matched to its UniFi
+**Linked devices:** since Home Assistant 2026.8 devices of different integrations are no longer merged, so the host
+device shows the values of matching devices itself, updated immediately when the source changes, and links to the
+source device page.
+
+- **APC UPS** (`apc_modbus`): matched by entry title, else by the host IP in the entry. Shows USV Ladung,
+  Restlaufzeit, Last, Batterietemperatur, Eingangsspannung, Letzter Selbsttest, Online, Auf Batterie, Batterie tauschen.
+- **UniFi:** if the UniFi Controller integration (`unifi_controller`) is installed, each host is matched to its UniFi
 device by name (a name prefix is ignored), otherwise by IP. The host device then also shows UniFi Status, Firmware,
 Gestartet, Clients, CPU, Speicher and Temperatur (whatever the UniFi device has), updated immediately when the UniFi
 entity changes, and links to the UniFi device page. Since Home Assistant 2026.8 devices of different integrations are
@@ -47,6 +53,12 @@ basic-auth user and password (stored in the config entry, not in YAML), optional
 credentials). The icon ships in `brand/` (Home Assistant 2026.3+).
 
 Options: polling interval (default 60 s) and hours after which vanished hosts are removed (default 24).
+
+## Releases
+
+Every push runs `.github/workflows/ci.yml` (lint, pytest, hassfest, HACS). On success a version tag is created from
+the commit messages (`feat` -> minor, `BREAKING` -> major, otherwise patch; `[skip release]` or docs/workflow-only
+changes -> no release) and a GitHub release with `prometheus_hosts.zip`; HACS installs these releases.
 
 ## Tests
 

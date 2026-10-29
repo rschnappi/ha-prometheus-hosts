@@ -1,0 +1,183 @@
+# CI/CD (wie rschnappi/Unifi-hacs): pruefen -> (Branch: PR + Merge) -> Release aus main
+#
+# Push auf einen Branch (!= main): Pruefungen; wenn alle gruen -> PR anlegen, squash-mergen,
+#   Branch loeschen, Release erstellen.
+# Push auf main: Pruefungen; wenn gruen -> Release erstellen.
+# Hinweis: Aktionen mit dem GITHUB_TOKEN (PR anlegen, mergen, Tag pushen) starten KEINE
+# weiteren Workflows - deshalb laeuft alles in diesem einen Workflow.
+#
+# Version: hoechster Tag + Bump aus den Commit-Nachrichten seit dem letzten Tag
+#   "BREAKING" oder "!:" -> major · "feat" oder "[minor]" -> minor · sonst -> patch
+#   "[skip release]" in ALLEN Commits seit dem letzten Tag oder nur Doku/Workflow geaendert -> kein Release.
+name: CI/CD
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: "Versionssprung"
+        type: choice
+        options: [auto, patch, minor, major]
+        default: auto
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: cicd-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  lint:
+    name: Syntax, JSON, Uebersetzungen
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with: {python-version: "3.14"}
+      - run: pip install ruff
+      - name: Python-Syntax + undefinierte Namen
+        run: |
+          python -m compileall -q custom_components
+          ruff check custom_components --select E9,F63,F7,F82 --output-format=github
+      - name: JSON + gleiche Schluessel in allen Uebersetzungen
+        run: |
+          python - <<'PY'
+          import json, sys, pathlib
+          b = pathlib.Path("custom_components/prometheus_hosts")
+          json.loads((b / "manifest.json").read_text())
+          def keys(d, p=""):
+              return {k2 for k, v in d.items() for k2 in (keys(v, f"{p}{k}.") if isinstance(v, dict) else {f"{p}{k}"})}
+          ref = keys(json.loads((b / "strings.json").read_text()))
+          bad = 0
+          for f in ["translations/de.json", "translations/en.json"]:
+              diff = ref ^ keys(json.loads((b / f).read_text()))
+              if diff:
+                  print(f"::error file={b/f}::abweichende Schluessel: {sorted(diff)}")
+                  bad += 1
+          sys.exit(bad)
+          PY
+
+  pytest:
+    name: Tests gegen Home Assistant
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with: {python-version: "3.14"}
+      - run: pip install -r requirements_test.txt
+      - run: pytest -v
+
+  hassfest:
+    name: hassfest
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: home-assistant/actions/hassfest@master
+
+  hacs:
+    name: HACS-Validierung
+    runs-on: ubuntu-latest
+    steps:
+      - uses: hacs/action@main
+        with:
+          category: integration
+          ignore: brands
+
+  deliver:
+    name: PR, Merge & Release
+    needs: [lint, pytest, hassfest, hacs]
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      BRANCH: ${{ github.ref_name }}
+    steps:
+      - uses: actions/checkout@v5
+        with: {fetch-depth: 0}
+      - run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: PR anlegen und mergen (nur Branches)
+        if: github.ref_name != 'main'
+        run: |
+          git fetch origin main
+          if [ -z "$(git rev-list "origin/main..$GITHUB_SHA")" ]; then
+            echo "Keine neuen Commits gegenueber main - nichts zu tun"
+            echo "SKIP_DELIVER=1" >> "$GITHUB_ENV"; exit 0
+          fi
+          TITLE="$(git log -1 --pretty=%s "$GITHUB_SHA")"
+          BODY="$(git log --no-merges --pretty='- %s' "origin/main..$GITHUB_SHA")"
+          if ! gh pr view "$BRANCH" --json number >/dev/null 2>&1; then
+            gh pr create --base main --head "$BRANCH" --title "$TITLE" --body "$BODY"
+          fi
+          HEAD_NOW="$(gh pr view "$BRANCH" --json headRefOid -q .headRefOid)"
+          if [ "$HEAD_NOW" != "$GITHUB_SHA" ]; then
+            echo "Branch wurde weiter gepusht ($HEAD_NOW) - Merge uebernimmt der neuere Lauf"
+            echo "SKIP_DELIVER=1" >> "$GITHUB_ENV"; exit 0
+          fi
+          gh pr edit "$BRANCH" --title "$TITLE" >/dev/null
+          gh pr merge "$BRANCH" --squash --delete-branch --match-head-commit "$GITHUB_SHA" \
+            --subject "$TITLE" --body "$BODY"
+          git fetch origin main
+          git checkout -B main origin/main
+
+      - name: Version bestimmen
+        id: v
+        run: |
+          if [ "${SKIP_DELIVER:-}" = "1" ]; then echo "skip=1" >> "$GITHUB_OUTPUT"; exit 0; fi
+          LAST=$(git tag -l 'v*' --sort=-v:refname | head -1)
+          LAST=${LAST:-v0.0.0}
+          LOG=$(git log --pretty='%s%n%b' "${LAST}..HEAD")
+          PENDING=$(for c in $(git rev-list "${LAST}..HEAD"); do git log -1 --format='%B' "$c" | grep -q '\[skip release\]' || echo "$c"; done)
+          if [ -z "$PENDING" ]; then echo "Nur [skip release]-Commits seit ${LAST}"; echo "skip=1" >> "$GITHUB_OUTPUT"; exit 0; fi
+          if [ -z "$(git rev-list "${LAST}..HEAD")" ]; then echo "skip=1" >> "$GITHUB_OUTPUT"; exit 0; fi
+          if [ -z "$(git diff --name-only "${LAST}..HEAD" -- custom_components hacs.json)" ]; then
+            echo "Keine Code-Aenderung seit ${LAST} - kein Release"; echo "skip=1" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          BUMP="${{ inputs.bump || 'auto' }}"
+          if [ "$BUMP" = "auto" ]; then
+            if echo "$LOG" | grep -Eq 'BREAKING|^[a-z]+(\(.+\))?!:'; then BUMP=major
+            elif echo "$LOG" | grep -Eiq '^feat|\[minor\]'; then BUMP=minor
+            else BUMP=patch; fi
+          fi
+          IFS=. read -r MA MI PA <<< "${LAST#v}"
+          case $BUMP in
+            major) MA=$((MA+1)); MI=0; PA=0;;
+            minor) MI=$((MI+1)); PA=0;;
+            *)     PA=$((PA+1));;
+          esac
+          echo "tag=v$MA.$MI.$PA" >> "$GITHUB_OUTPUT"
+          echo "version=$MA.$MI.$PA" >> "$GITHUB_OUTPUT"
+          echo "last=$LAST" >> "$GITHUB_OUTPUT"
+          echo "Neue Version: v$MA.$MI.$PA ($BUMP, vorher $LAST)"
+
+      - name: Tag setzen
+        if: steps.v.outputs.skip != '1'
+        run: |
+          git tag -a "${{ steps.v.outputs.tag }}" -m "${{ steps.v.outputs.tag }}"
+          git push origin "${{ steps.v.outputs.tag }}"
+
+      - name: ZIP bauen (Version aus Tag in manifest.json)
+        if: steps.v.outputs.skip != '1'
+        run: |
+          cd custom_components/prometheus_hosts
+          jq --arg v "${{ steps.v.outputs.version }}" '.version = $v' manifest.json > m.tmp && mv m.tmp manifest.json
+          zip -r "$GITHUB_WORKSPACE/prometheus_hosts.zip" . -x '*__pycache__*'
+
+      - name: Release erstellen
+        if: steps.v.outputs.skip != '1'
+        run: |
+          {
+            echo "## Aenderungen"
+            git log --no-merges --pretty='- %s' "${{ steps.v.outputs.last }}..${{ steps.v.outputs.tag }}" | grep -viE '^- (release|merge) ' || true
+            echo
+            echo "**Vergleich:** https://github.com/${GITHUB_REPOSITORY}/compare/${{ steps.v.outputs.last }}...${{ steps.v.outputs.tag }}"
+          } > notes.md
+          gh release create "${{ steps.v.outputs.tag }}" prometheus_hosts.zip \
+            --title "${{ steps.v.outputs.tag }}" --notes-file notes.md --verify-tag

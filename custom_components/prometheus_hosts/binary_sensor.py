@@ -7,7 +7,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .coordinator import PrometheusHostsConfigEntry, PrometheusHostsCoordinator
-from .entity import HostEntity, OverviewEntity, setup_dynamic
+from .entity import HostEntity, MirrorEntity, OverviewEntity, mirror_factory, setup_dynamic
 from .parse import Check, Host
 
 
@@ -19,7 +19,15 @@ async def async_setup_entry(
             yield check.key, CheckBinarySensor(coordinator, host.key, check)
 
     setup_dynamic(entry, async_add_entities, factory)
+    setup_dynamic(entry, async_add_entities, mirror_factory("binary_sensor", MirrorBinarySensor))
     async_add_entities([WatchdogBinarySensor(entry.runtime_data)])
+
+
+class MirrorBinarySensor(MirrorEntity, BinarySensorEntity):
+    @property
+    def is_on(self) -> bool | None:
+        state = self.source_state
+        return state.state == "on" if state else None
 
 
 class WatchdogBinarySensor(OverviewEntity, BinarySensorEntity):

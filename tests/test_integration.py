@@ -256,13 +256,13 @@ async def test_unifi_values_on_host_device(hass: HomeAssistant, prom) -> None:
     prom.results["checks"].append(probe("SW-LAB02", "switch", "icmp", "192.0.2.51", 1, site="lab"))
     entry = await setup_entry(hass)
 
-    fw = entity_id(hass, entry, "sensor", "SW-LAB01", "unifi_firmware")
-    clients = entity_id(hass, entry, "sensor", "SW-LAB01", "unifi_clients")
+    fw = entity_id(hass, entry, "sensor", "SW-LAB01", "unifi_controller_firmware")
+    clients = entity_id(hass, entry, "sensor", "SW-LAB01", "unifi_controller_clients")
     assert hass.states.get(fw).state == "1.2.3"
     assert hass.states.get(clients).state == "7"
     # Only keys the UniFi device has; no UniFi entities for hosts without a UniFi device.
-    assert entity_id(hass, entry, "sensor", "SW-LAB01", "unifi_cpu") is None
-    assert entity_id(hass, entry, "sensor", "SW-LAB02", "unifi_firmware") is None
+    assert entity_id(hass, entry, "sensor", "SW-LAB01", "unifi_controller_cpu") is None
+    assert entity_id(hass, entry, "sensor", "SW-LAB02", "unifi_controller_firmware") is None
     assert get_device(hass, "SW-LAB01").configuration_url == (
         f"homeassistant://config/devices/device/{unifi_dev.id}"
     )
@@ -298,10 +298,47 @@ async def test_unifi_match_by_ip(hass: HomeAssistant, prom) -> None:
 
     entry = await setup_entry(hass)
     # VM-DNS01 has IP 192.0.2.20 from its dns check target.
-    fw = entity_id(hass, entry, "sensor", "VM-DNS01", "unifi_firmware")
+    fw = entity_id(hass, entry, "sensor", "VM-DNS01", "unifi_controller_firmware")
     assert hass.states.get(fw).state == "9.9"
 
 
 async def test_vm_linked_to_hypervisor_via_device_id(hass: HomeAssistant, prom) -> None:
     await setup_entry(hass)
     assert get_device(hass, "VM-WEB01").via_device_id == get_device(hass, "LABHV01").id
+
+
+async def test_apc_ups_values_on_host_device(hass: HomeAssistant, prom) -> None:
+    """An APC UPS entry with another title is matched by its host IP; values follow changes."""
+    apc_entry = MockConfigEntry(domain="apc_modbus", title="LAB-APC-OTHER", data={"host": "192.0.2.60"})
+    apc_entry.add_to_hass(hass)
+    dev = dr.async_get(hass).async_get_or_create(
+        config_entry_id=apc_entry.entry_id, identifiers={("apc_modbus", apc_entry.entry_id)}, name="LAB-APC-OTHER",
+    )
+    entreg = er.async_get(hass)
+    ids = {}
+    for domain, key in (("sensor", "battery_state_of_charge"), ("binary_sensor", "ups_on_battery")):
+        ent = entreg.async_get_or_create(
+            domain, "apc_modbus", f"apc_modbus_{apc_entry.entry_id}_{key}", config_entry=apc_entry, device_id=dev.id,
+        )
+        ids[key] = ent.entity_id
+    hass.states.async_set(ids["battery_state_of_charge"], "100.0", {"unit_of_measurement": "%"})
+    hass.states.async_set(ids["ups_on_battery"], "off")
+
+    prom.results["checks"].append(
+        probe("USV-LAB01", "rolle:usv", "icmp", "192.0.2.60", 1, site="lab", rolle="usv-srv")
+    )
+    entry = await setup_entry(hass)
+
+    charge = entity_id(hass, entry, "sensor", "USV-LAB01", "apc_modbus_battery_state_of_charge")
+    on_batt = entity_id(hass, entry, "binary_sensor", "USV-LAB01", "apc_modbus_ups_on_battery")
+    assert hass.states.get(charge).state == "100.0"
+    assert hass.states.get(charge).attributes["unit_of_measurement"] == "%"
+    assert hass.states.get(on_batt).state == "off"
+    assert get_device(hass, "USV-LAB01").model == "USV"
+
+    # Power cut: the UPS switches to battery and discharges.
+    hass.states.async_set(ids["ups_on_battery"], "on")
+    hass.states.async_set(ids["battery_state_of_charge"], "87.5", {"unit_of_measurement": "%"})
+    await hass.async_block_till_done()
+    assert hass.states.get(on_batt).state == "on"
+    assert hass.states.get(charge).state == "87.5"

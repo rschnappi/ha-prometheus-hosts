@@ -8,14 +8,13 @@ from homeassistant.components.sensor import (
     SensorStateClass,
 )
 from homeassistant.const import PERCENTAGE, UnitOfTime
-from homeassistant.core import Event, EventStateChangedData, HomeAssistant, callback
-from homeassistant.helpers.event import async_track_state_change_event
+from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import STATUS_OPTIONS
 from .coordinator import PrometheusHostsConfigEntry, PrometheusHostsCoordinator
-from .entity import HostEntity, OverviewEntity, setup_dynamic
+from .entity import HostEntity, MirrorEntity, OverviewEntity, mirror_factory, setup_dynamic
 from .parse import Host
 
 # metric key -> (name, unit, icon)
@@ -37,13 +36,9 @@ async def async_setup_entry(
         for metric in host.metrics:
             if metric in METRICS:
                 yield metric, MetricSensor(coordinator, host.key, metric)
-        unifi_dev = coordinator.data.unifi.get(host.key) if coordinator.data else None
-        if unifi_dev:
-            for key in UNIFI_SENSORS:
-                if key in unifi_dev.entities:
-                    yield f"unifi_{key}", UnifiSensor(coordinator, host.key, key)
 
     setup_dynamic(entry, async_add_entities, factory)
+    setup_dynamic(entry, async_add_entities, mirror_factory("sensor", MirrorSensor))
     coordinator = entry.runtime_data
     async_add_entities(OverviewSensor(coordinator, key) for key in OVERVIEW_SENSORS)
 
@@ -86,87 +81,24 @@ class OverviewSensor(OverviewEntity, SensorEntity):
         return {self._detail: getattr(data.overview, self._detail)}
 
 
-# UniFi sensor key -> (name, device class, state class, unit when the source has none)
-UNIFI_SENSORS = {
-    "status": ("UniFi Status", None, None),
-    "firmware": ("UniFi Firmware", None, None),
-    "uptime": ("UniFi Gestartet", SensorDeviceClass.TIMESTAMP, None),
-    "clients": ("UniFi Clients", None, SensorStateClass.MEASUREMENT),
-    "cpu": ("UniFi CPU", None, SensorStateClass.MEASUREMENT),
-    "mem": ("UniFi Speicher", None, SensorStateClass.MEASUREMENT),
-    "temperature": ("UniFi Temperatur", SensorDeviceClass.TEMPERATURE, SensorStateClass.MEASUREMENT),
-}
-
-
-class UnifiSensor(HostEntity, SensorEntity):
-    """Shows a value of the matching UniFi Controller device on the host device."""
-
-    def __init__(self, coordinator: PrometheusHostsCoordinator, host_key: str, key: str) -> None:
-        super().__init__(coordinator, host_key, f"unifi_{key}")
-        self.key = key
-        name, self._attr_device_class, self._attr_state_class = UNIFI_SENSORS[key]
-        self._attr_name = name
-        self._unsub_source = None
-        self._tracked: str | None = None
-
-    @property
-    def source(self) -> str | None:
-        data = self.coordinator.data
-        dev = data.unifi.get(self.host_key) if data else None
-        return dev.entities.get(self.key) if dev else None
-
-    @property
-    def available(self) -> bool:
-        source = self.source
-        state = self.hass.states.get(source) if source else None
-        return super().available and state is not None and state.state not in ("unavailable", "unknown")
+class MirrorSensor(MirrorEntity, SensorEntity):
+    def __init__(self, coordinator, host_key, domain, spec) -> None:
+        super().__init__(coordinator, host_key, domain, spec)
+        self._attr_state_class = spec.state_class
 
     @property
     def native_value(self):
-        source = self.source
-        state = self.hass.states.get(source) if source else None
+        state = self.source_state
         if state is None:
             return None
-        if self._attr_device_class == SensorDeviceClass.TIMESTAMP:
+        if self.spec.device_class == SensorDeviceClass.TIMESTAMP:
             return dt_util.parse_datetime(state.state)
         return state.state
 
     @property
     def native_unit_of_measurement(self) -> str | None:
-        source = self.source
-        state = self.hass.states.get(source) if source else None
+        state = self.source_state
         return state.attributes.get("unit_of_measurement") if state else None
-
-    async def async_added_to_hass(self) -> None:
-        await super().async_added_to_hass()
-        self._track_source()
-
-    async def async_will_remove_from_hass(self) -> None:
-        if self._unsub_source:
-            self._unsub_source()
-        await super().async_will_remove_from_hass()
-
-    @callback
-    def _handle_coordinator_update(self) -> None:
-        self._track_source()
-        super()._handle_coordinator_update()
-
-    @callback
-    def _track_source(self) -> None:
-        """Follow the UniFi entity directly, so changes show up without waiting for the next poll."""
-        source = self.source
-        if source == self._tracked:
-            return
-        if self._unsub_source:
-            self._unsub_source()
-            self._unsub_source = None
-        self._tracked = source
-        if source:
-            self._unsub_source = async_track_state_change_event(self.hass, source, self._source_changed)
-
-    @callback
-    def _source_changed(self, event: Event[EventStateChangedData]) -> None:
-        self.async_write_ha_state()
 
 
 class StatusSensor(HostEntity, SensorEntity):
