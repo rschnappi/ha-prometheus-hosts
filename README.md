@@ -33,7 +33,7 @@ expiry in days (certificates under 30 days as attribute) and number of checked c
 configured, alerts come from Alertmanager (silenced and inhibited ones excluded), otherwise from Prometheus.
 
 Devices carry the kind as model (VM, Hyper-V, Proxmox, Switch, USV, Access Point, Server, ...), the `site` label as
-suggested area, and VMs are linked to their Hyper-V host (`via_device_id`) - the host's device page lists its VMs.
+attribute (no Home Assistant areas are created), and VMs are linked to their Hyper-V host (`via_device_id`) - the host's device page lists its VMs.
 
 ## Data sources (read-only)
 

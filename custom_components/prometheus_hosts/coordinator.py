@@ -140,7 +140,6 @@ class PrometheusHostsCoordinator(DataUpdateCoordinator[Snapshot]):
                 name=h.name,
                 manufacturer="Prometheus",
                 model=h.kind,
-                suggested_area=h.site or None,
                 configuration_url=url,
             )
             self._device_ids[h.key] = device.id
