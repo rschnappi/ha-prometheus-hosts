@@ -403,9 +403,11 @@ async def test_overview_text_lists(hass: HomeAssistant, prom) -> None:
     cert_list = entity_id(hass, entry, "sensor", OVERVIEW_KEY, "cert_list")
     assert hass.states.get(alert_list).state == "keine"
     assert hass.states.get(cert_list).state == "dns VM-DNS01 12 d"
+    assert [r["tage"] for r in hass.states.get(cert_list).attributes["naechste"]] == [12, 90]
 
     prom.am_alerts = AM_ALERTS
     prom.results["cert_expiry"] = []
     await refresh(hass, entry)
     assert hass.states.get(alert_list).state == "DiskFull, HostDown"
     assert hass.states.get(cert_list).state == "keine unter 30 Tagen"
+    assert hass.states.get(cert_list).attributes["naechste"] == []

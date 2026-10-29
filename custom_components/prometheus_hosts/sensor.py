@@ -88,19 +88,27 @@ class OverviewSensor(OverviewEntity, SensorEntity):
         return {self._detail: getattr(data.overview, self._detail)}
 
 
-# overview key -> (name, icon, list attribute, text when the list is empty)
+# overview key -> (name, icon, list attribute, text when the list is empty, table attribute)
 OVERVIEW_TEXT = {
-    "alert_list": ("Alarmliste", "mdi:format-list-bulleted", "alert_names", "keine"),
-    "cert_list": ("Zertifikate Ablaufliste", "mdi:format-list-bulleted", "certs_expiring", "keine unter 30 Tagen"),
+    "alert_list": ("Alarmliste", "mdi:format-list-bulleted", "alert_names", "keine", None),
+    "cert_list": (
+        "Zertifikate Ablaufliste",
+        "mdi:format-list-bulleted",
+        "certs_expiring",
+        "keine unter 30 Tagen",
+        "certs_next",
+    ),
 }
 
 
 class OverviewTextSensor(OverviewEntity, SensorEntity):
     """A list from the overview as comma-separated text (max. 250 characters)."""
 
+    _unrecorded_attributes = frozenset({"naechste"})
+
     def __init__(self, coordinator: PrometheusHostsCoordinator, key: str) -> None:
         super().__init__(coordinator, key)
-        name, icon, self._source, self._empty = OVERVIEW_TEXT[key]
+        name, icon, self._source, self._empty, self._table = OVERVIEW_TEXT[key]
         self._attr_name = name
         self._attr_icon = icon
 
@@ -111,6 +119,13 @@ class OverviewTextSensor(OverviewEntity, SensorEntity):
             return None
         items = getattr(data.overview, self._source)
         return ", ".join(items)[:250] if items else self._empty
+
+    @property
+    def extra_state_attributes(self) -> dict | None:
+        data = self.coordinator.data
+        if not self._table or not data:
+            return None
+        return {"naechste": getattr(data.overview, self._table)}
 
 
 class MirrorSensor(MirrorEntity, SensorEntity):

@@ -59,8 +59,8 @@ def base_results(web_ok=1, dns_ok=1, hv_ok=1, mysql_up=1, paused=0, win_up=1):
         "pods_failed": [row(2)],
         "probes_failed": [row(3 - web_ok - dns_ok - hv_ok)],
         "cert_expiry": [
-            row(86400 * 90, instance="VM-WEB01", dienst="web"),
-            row(86400 * 12.4, instance="VM-DNS01", dienst="dns"),
+            row(86400 * 90, instance="VM-WEB01", dienst="web", target="web.example.test:443"),
+            row(86400 * 12.4, instance="VM-DNS01", dienst="dns", target="dns.example.test:853"),
         ],
         "db": [
             row(mysql_up, __name__="mysql_up", instance="DB-NODE1"),
@@ -174,6 +174,10 @@ def test_overview_numbers_and_certs():
     assert (o.targets_down, o.nodes_not_ready, o.pods_failed, o.probes_failed) == (0, 0, 2, 0)
     assert o.certs_checked == 2 and o.cert_min_days == 12.4
     assert o.certs_expiring == ["dns VM-DNS01 12 d"]
+    assert o.certs_next == [
+        {"dienst": "dns", "instance": "VM-DNS01", "target": "dns.example.test:853", "tage": 12},
+        {"dienst": "web", "instance": "VM-WEB01", "target": "web.example.test:443", "tage": 90},
+    ]
     assert (o.alerts_open, o.alerts_critical, o.alerts_warning) == (2, 1, 1)
     assert o.alert_names == ["DiskFull", "HostDown"]
     assert o.watchdog_missing is False
@@ -228,3 +232,14 @@ def test_overview_host_counts_follow_changes():
     assert o.hosts_down_names == ["LABHV01"]
     assert o.hosts_partial_names == ["VM-WEB01"]
     assert (o.hosts_down, o.hosts_partial) == (1, 1)
+
+
+def test_certs_next_is_capped_and_follows_changing_values():
+    rows = [row(86400 * (100 - n), instance=f"VM-{n:02d}", dienst="web") for n in range(40)]
+    o = build_overview({"cert_expiry": rows}, [])
+    assert len(o.certs_next) == 25
+    assert o.certs_next[0] == {"dienst": "web", "instance": "VM-39", "target": "?", "tage": 61}
+    rows[0] = row(86400 * 2, instance="VM-00", dienst="web")
+    o = build_overview({"cert_expiry": rows}, [])
+    assert o.certs_next[0]["instance"] == "VM-00" and o.certs_next[0]["tage"] == 2
+    assert o.certs_expiring == ["web VM-00 2 d"]

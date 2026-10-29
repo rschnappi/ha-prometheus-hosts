@@ -10,6 +10,7 @@ from datetime import datetime
 import re
 
 from .const import (
+    CERT_NEXT_MAX,
     CERT_WARN_DAYS,
     DEFAULT_REASON,
     EXPORTER_JOBS,
@@ -276,6 +277,7 @@ class Overview:
     certs_checked: int = 0
     cert_min_days: float | None = None
     certs_expiring: list[str] = field(default_factory=list)
+    certs_next: list[dict] = field(default_factory=list)
     alerts_open: int = 0
     alerts_critical: int = 0
     alerts_warning: int = 0
@@ -334,11 +336,16 @@ def build_overview(
         if v is None:
             continue
         m = row.get("metric", {})
-        certs.append((v / 86400, m.get("dienst") or m.get("instance") or "?", m.get("instance", "?")))
+        certs.append(
+            (v / 86400, m.get("dienst") or m.get("instance") or "?", m.get("instance", "?"), m.get("target", "?"))
+        )
     certs.sort()
     o.certs_checked = len(certs)
     o.cert_min_days = round(certs[0][0], 1) if certs else None
-    o.certs_expiring = [f"{d} {i} {round(days)} d" for days, d, i in certs if days < CERT_WARN_DAYS]
+    o.certs_expiring = [f"{d} {i} {round(days)} d" for days, d, i, _ in certs if days < CERT_WARN_DAYS]
+    o.certs_next = [
+        {"dienst": d, "instance": i, "target": t, "tage": round(days)} for days, d, i, t in certs[:CERT_NEXT_MAX]
+    ]
 
     labels = firing_alert_labels(alerts or [])
     o.watchdog_missing = not any(l.get("alertname") == WATCHDOG_ALERT for l in labels)

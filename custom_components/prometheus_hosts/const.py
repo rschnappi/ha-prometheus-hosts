@@ -93,3 +93,4 @@ OVERVIEW_KEY = "_monitoring"
 OVERVIEW_NAME = "Monitoring"
 WATCHDOG_ALERT = "Watchdog"
 CERT_WARN_DAYS = 30
+CERT_NEXT_MAX = 25  # rows in the "naechste" table attribute
