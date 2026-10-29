@@ -228,3 +228,80 @@ async def test_overview_device(hass: HomeAssistant, prom) -> None:
     prom.results = {}
     await refresh(hass, entry)
     assert get_device(hass, OVERVIEW_KEY) is not None
+
+
+async def test_unifi_values_on_host_device(hass: HomeAssistant, prom) -> None:
+    """A UniFi device with the same name gets its values mirrored onto the host device."""
+    unifi_entry = MockConfigEntry(domain="unifi_controller", title="UniFi")
+    unifi_entry.add_to_hass(hass)
+    mac = "02:00:00:00:00:50"
+    unifi_dev = dr.async_get(hass).async_get_or_create(
+        config_entry_id=unifi_entry.entry_id,
+        identifiers={("unifi_controller", f"{unifi_entry.entry_id}_{mac}")},
+        name="LAB SW-LAB01",
+    )
+    entreg = er.async_get(hass)
+    ids = {}
+    for key in ("firmware", "clients", "ip"):
+        ent = entreg.async_get_or_create(
+            "sensor", "unifi_controller", f"{unifi_entry.entry_id}_{mac}_{key}",
+            config_entry=unifi_entry, device_id=unifi_dev.id, suggested_object_id=f"unifi_lab_{key}",
+        )
+        ids[key] = ent.entity_id
+    hass.states.async_set(ids["firmware"], "1.2.3")
+    hass.states.async_set(ids["clients"], "7")
+    hass.states.async_set(ids["ip"], "192.0.2.50")
+
+    prom.results["checks"].append(probe("SW-LAB01", "switch", "icmp", "192.0.2.50", 1, site="lab"))
+    prom.results["checks"].append(probe("SW-LAB02", "switch", "icmp", "192.0.2.51", 1, site="lab"))
+    entry = await setup_entry(hass)
+
+    fw = entity_id(hass, entry, "sensor", "SW-LAB01", "unifi_firmware")
+    clients = entity_id(hass, entry, "sensor", "SW-LAB01", "unifi_clients")
+    assert hass.states.get(fw).state == "1.2.3"
+    assert hass.states.get(clients).state == "7"
+    # Only keys the UniFi device has; no UniFi entities for hosts without a UniFi device.
+    assert entity_id(hass, entry, "sensor", "SW-LAB01", "unifi_cpu") is None
+    assert entity_id(hass, entry, "sensor", "SW-LAB02", "unifi_firmware") is None
+    assert get_device(hass, "SW-LAB01").configuration_url == (
+        f"homeassistant://config/devices/device/{unifi_dev.id}"
+    )
+
+    # Changed UniFi values show up at once, without waiting for the next Prometheus poll.
+    hass.states.async_set(ids["clients"], "12")
+    hass.states.async_set(ids["firmware"], "1.2.4")
+    await hass.async_block_till_done()
+    assert hass.states.get(clients).state == "12"
+    assert hass.states.get(fw).state == "1.2.4"
+
+    hass.states.async_set(ids["clients"], "unavailable")
+    await hass.async_block_till_done()
+    assert hass.states.get(clients).state == STATE_UNAVAILABLE
+
+
+async def test_unifi_match_by_ip(hass: HomeAssistant, prom) -> None:
+    unifi_entry = MockConfigEntry(domain="unifi_controller", title="UniFi")
+    unifi_entry.add_to_hass(hass)
+    mac = "02:00:00:00:00:60"
+    dev = dr.async_get(hass).async_get_or_create(
+        config_entry_id=unifi_entry.entry_id,
+        identifiers={("unifi_controller", f"{unifi_entry.entry_id}_{mac}")},
+        name="Other name",
+    )
+    entreg = er.async_get(hass)
+    for key, value in (("ip", "192.0.2.20"), ("firmware", "9.9")):
+        ent = entreg.async_get_or_create(
+            "sensor", "unifi_controller", f"{unifi_entry.entry_id}_{mac}_{key}",
+            config_entry=unifi_entry, device_id=dev.id,
+        )
+        hass.states.async_set(ent.entity_id, value)
+
+    entry = await setup_entry(hass)
+    # VM-DNS01 has IP 192.0.2.20 from its dns check target.
+    fw = entity_id(hass, entry, "sensor", "VM-DNS01", "unifi_firmware")
+    assert hass.states.get(fw).state == "9.9"
+
+
+async def test_vm_linked_to_hypervisor_via_device_id(hass: HomeAssistant, prom) -> None:
+    await setup_entry(hass)
+    assert get_device(hass, "VM-WEB01").via_device_id == get_device(hass, "LABHV01").id

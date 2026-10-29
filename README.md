@@ -15,13 +15,19 @@ after a grace period.
 | CPU / RAM / Disk | sensor (%) | from node_exporter or windows_exporter, only when available |
 | Galera-Knoten | sensor | Galera cluster size (MariaDB hosts) |
 
+**UniFi:** if the UniFi Controller integration (`unifi_controller`) is installed, each host is matched to its UniFi
+device by name (a name prefix is ignored), otherwise by IP. The host device then also shows UniFi Status, Firmware,
+Gestartet, Clients, CPU, Speicher and Temperatur (whatever the UniFi device has), updated immediately when the UniFi
+entity changes, and links to the UniFi device page. Since Home Assistant 2026.8 devices of different integrations are
+no longer merged, so this is how both sources end up on one device page.
+
 An extra device **Monitoring** holds the overall numbers: open/critical/warning alerts (with names), `Watchdog fehlt`
 (alert pipeline broken), targets down, Kubernetes nodes not ready, failed pods, failed probes, next certificate
 expiry in days (certificates under 30 days as attribute) and number of checked certificates. With an Alertmanager URL
 configured, alerts come from Alertmanager (silenced and inhibited ones excluded), otherwise from Prometheus.
 
 Devices carry the kind as model (VM, Hyper-V, Proxmox, Switch, USV, Access Point, Server, ...), the `site` label as
-suggested area, and VMs are linked to their Hyper-V host (`via_device`) - the host's device page lists its VMs.
+suggested area, and VMs are linked to their Hyper-V host (`via_device_id`) - the host's device page lists its VMs.
 
 ## Data sources (read-only)
 

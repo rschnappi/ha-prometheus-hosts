@@ -26,6 +26,7 @@ from .const import (
     QUERIES,
 )
 from .parse import Host, Overview, build_hosts, build_overview
+from .unifi import UnifiDevice, collect_unifi_devices, match_hosts
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -38,6 +39,7 @@ class Snapshot:
 
     hosts: dict[str, Host] = field(default_factory=dict)
     overview: Overview = field(default_factory=Overview)
+    unifi: dict[str, UnifiDevice] = field(default_factory=dict)
 
 
 class PrometheusHostsCoordinator(DataUpdateCoordinator[Snapshot]):
@@ -58,6 +60,7 @@ class PrometheusHostsCoordinator(DataUpdateCoordinator[Snapshot]):
         self.client = client
         self._last_seen: dict[str, float] = {}
         self._device_sig: dict[str, tuple] = {}
+        self._device_ids: dict[str, str] = {}
         # Host keys whose device was removed in the last update; platforms forget them.
         self.removed: set[str] = set()
 
@@ -81,10 +84,11 @@ class PrometheusHostsCoordinator(DataUpdateCoordinator[Snapshot]):
             raise UpdateFailed(str(err)) from err
 
         hosts = build_hosts(results, alerts)
-        self._sync_devices(hosts)
-        return Snapshot(hosts=hosts, overview=build_overview(results, am_alerts))
+        unifi = match_hosts(self.hass, hosts, collect_unifi_devices(self.hass))
+        self._sync_devices(hosts, unifi)
+        return Snapshot(hosts=hosts, overview=build_overview(results, am_alerts), unifi=unifi)
 
-    def _sync_devices(self, hosts: dict[str, Host]) -> None:
+    def _sync_devices(self, hosts: dict[str, Host], unifi: dict[str, UnifiDevice]) -> None:
         """Create/update one device per host, hypervisors first, and drop stale ones."""
         reg = dr.async_get(self.hass)
         now = dt_util.utcnow().timestamp()
@@ -111,19 +115,25 @@ class PrometheusHostsCoordinator(DataUpdateCoordinator[Snapshot]):
         for h in sorted(hosts.values(), key=lambda h: (h.key not in hypervisors, h.key)):
             self._last_seen[h.key] = now
             via = h.hyperv if h.hyperv in hosts and h.hyperv != h.key else None
-            sig = (h.name, h.kind, h.site, via)
+            via_id = self._device_ids.get(via) if via else None
+            unifi_dev = unifi.get(h.key)
+            url = f"homeassistant://config/devices/device/{unifi_dev.device_id}" if unifi_dev else None
+            sig = (h.name, h.kind, h.site, via_id, url)
             if self._device_sig.get(h.key) == sig:
                 continue
             self._device_sig[h.key] = sig
-            reg.async_get_or_create(
+            device = reg.async_get_or_create(
                 config_entry_id=entry_id,
                 identifiers={(DOMAIN, h.key)},
                 name=h.name,
                 manufacturer="Prometheus",
                 model=h.kind,
                 suggested_area=h.site or None,
-                via_device=(DOMAIN, via) if via else None,
+                configuration_url=url,
             )
+            self._device_ids[h.key] = device.id
+            if device.via_device_id != via_id:
+                reg.async_update_device(device.id, via_device_id=via_id)
 
         self.removed = set()
         stale_after = self.config_entry.options.get(CONF_STALE_HOURS, DEFAULT_STALE_HOURS) * 3600
@@ -136,4 +146,5 @@ class PrometheusHostsCoordinator(DataUpdateCoordinator[Snapshot]):
         for key in stale:
             del self._last_seen[key]
             self._device_sig.pop(key, None)
+            self._device_ids.pop(key, None)
             self.removed.add(key)
