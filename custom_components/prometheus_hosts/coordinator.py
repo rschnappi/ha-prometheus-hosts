@@ -16,6 +16,8 @@ from homeassistant.util import dt as dt_util
 from .api import PrometheusAuthError, PrometheusClient, PrometheusError
 from .const import (
     CONF_ALERTMANAGER_URL,
+    CONF_LINK_APC,
+    CONF_LINK_UNIFI,
     CONF_SCAN_INTERVAL,
     CONF_STALE_HOURS,
     DEFAULT_SCAN_INTERVAL,
@@ -26,7 +28,7 @@ from .const import (
     QUERIES,
 )
 from .parse import Host, Overview, build_hosts, build_overview
-from .links import LinkedDevice, find_links
+from .links import APC, UNIFI, LinkedDevice, find_links
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -85,7 +87,9 @@ class PrometheusHostsCoordinator(DataUpdateCoordinator[Snapshot]):
             raise UpdateFailed(str(err)) from err
 
         hosts = build_hosts(results, alerts)
-        links = find_links(self.hass, hosts)
+        opts = self.config_entry.options
+        domains = {d for d, on in ((UNIFI, opts.get(CONF_LINK_UNIFI, True)), (APC, opts.get(CONF_LINK_APC, True))) if on}
+        links = find_links(self.hass, hosts, domains)
         if len(links) != self._linked_count:
             self._linked_count = len(links)
             per_domain: dict[str, int] = {}

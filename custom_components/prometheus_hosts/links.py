@@ -131,10 +131,16 @@ def _collect_apc(hass: HomeAssistant) -> list[LinkedDevice]:
     return out
 
 
-def find_links(hass: HomeAssistant, hosts: dict[str, Host]) -> dict[str, list[LinkedDevice]]:
-    """Host key -> matching devices of the supported integrations."""
+def find_links(
+    hass: HomeAssistant, hosts: dict[str, Host], domains: set[str] | None = None
+) -> dict[str, list[LinkedDevice]]:
+    """Host key -> matching devices of the supported integrations (all, or only `domains`)."""
+    collectors = {UNIFI: _collect_unifi, APC: _collect_apc}
     out: dict[str, list[LinkedDevice]] = {}
-    for devices in (_collect_unifi(hass), _collect_apc(hass)):
+    for domain, collect in collectors.items():
+        if domains is not None and domain not in domains:
+            continue
+        devices = collect(hass)
         by_name: dict[str, LinkedDevice] = {}
         by_ip: dict[str, LinkedDevice] = {}
         for dev in devices:

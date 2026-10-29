@@ -17,6 +17,17 @@
           "username": "Benutzer",
           "password": "Passwort"
         }
+      },
+      "reconfigure": {
+        "title": "Verbindung aendern",
+        "description": "Passwort leer lassen, um das bisherige zu behalten.",
+        "data": {
+          "url": "Prometheus-URL",
+          "username": "Benutzer",
+          "password": "Passwort",
+          "alertmanager_url": "Alertmanager-URL (optional)",
+          "verify_ssl": "Zertifikat pruefen"
+        }
       }
     },
     "error": {
@@ -26,7 +37,8 @@
     },
     "abort": {
       "already_configured": "Diese Prometheus-Instanz ist bereits eingerichtet",
-      "reauth_successful": "Anmeldung erneuert"
+      "reauth_successful": "Anmeldung erneuert",
+      "reconfigure_successful": "Verbindung geaendert"
     }
   },
   "options": {
@@ -34,7 +46,9 @@
       "init": {
         "data": {
           "scan_interval": "Abfrageintervall (Sekunden)",
-          "stale_hours": "Verschwundene Hosts entfernen nach (Stunden)"
+          "stale_hours": "Verschwundene Hosts entfernen nach (Stunden)",
+          "link_unifi": "UniFi-Werte am Host-Geraet zeigen",
+          "link_apc": "APC-USV-Werte am Host-Geraet zeigen"
         }
       }
     }

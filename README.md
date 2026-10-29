@@ -52,7 +52,11 @@ Settings -> Devices & services -> Add integration -> Prometheus Hosts. Enter the
 basic-auth user and password (stored in the config entry, not in YAML), optionally the Alertmanager URL (same
 credentials). The icon ships in `brand/` (Home Assistant 2026.3+).
 
-Options: polling interval (default 60 s) and hours after which vanished hosts are removed (default 24).
+Settings -> Devices & services -> Prometheus Hosts:
+
+- **Configure** (options, applied at once): polling interval (default 60 s), hours after which vanished hosts are
+  removed (default 24), show UniFi values and show APC UPS values on the host device (both on by default).
+- **Reconfigure**: Prometheus URL, user, password (empty keeps the current one), Alertmanager URL, certificate check.
 
 ## Releases
 

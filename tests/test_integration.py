@@ -342,3 +342,52 @@ async def test_apc_ups_values_on_host_device(hass: HomeAssistant, prom) -> None:
     await hass.async_block_till_done()
     assert hass.states.get(on_batt).state == "on"
     assert hass.states.get(charge).state == "87.5"
+
+
+async def test_options_flow_changes_interval_and_links(hass: HomeAssistant, prom) -> None:
+    unifi_entry = MockConfigEntry(domain="unifi_controller", title="UniFi")
+    unifi_entry.add_to_hass(hass)
+    mac = "02:00:00:00:00:70"
+    dev = dr.async_get(hass).async_get_or_create(
+        config_entry_id=unifi_entry.entry_id,
+        identifiers={("unifi_controller", f"{unifi_entry.entry_id}_{mac}")},
+        name="LABHV01",
+    )
+    ent = er.async_get(hass).async_get_or_create(
+        "sensor", "unifi_controller", f"{unifi_entry.entry_id}_{mac}_firmware",
+        config_entry=unifi_entry, device_id=dev.id,
+    )
+    hass.states.async_set(ent.entity_id, "4.5.6")
+    entry = await setup_entry(hass)
+    fw = entity_id(hass, entry, "sensor", "LABHV01", "unifi_controller_firmware")
+    assert hass.states.get(fw).state == "4.5.6"
+
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    assert result["type"] is FlowResultType.FORM
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        {"scan_interval": 120, "stale_hours": 6, "link_unifi": False, "link_apc": True},
+    )
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    await hass.async_block_till_done()
+
+    assert entry.runtime_data.update_interval.total_seconds() == 120
+    assert hass.states.get(fw).state == STATE_UNAVAILABLE
+
+
+async def test_reconfigure_keeps_password_when_empty(hass: HomeAssistant, prom) -> None:
+    entry = await setup_entry(hass)
+    result = await entry.start_reconfigure_flow(hass)
+    assert result["type"] is FlowResultType.FORM
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        {CONF_URL: "https://prometheus2.example.test/", CONF_USERNAME: "user2", CONF_PASSWORD: "",
+         CONF_ALERTMANAGER_URL: "https://alertmanager.example.test/"},
+    )
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "reconfigure_successful"
+    assert entry.data[CONF_URL] == "https://prometheus2.example.test"
+    assert entry.data[CONF_USERNAME] == "user2"
+    assert entry.data[CONF_PASSWORD] == "pw"
+    assert entry.data[CONF_ALERTMANAGER_URL] == "https://alertmanager.example.test"
+    assert entry.unique_id == "https://prometheus2.example.test"

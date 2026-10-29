@@ -14,6 +14,8 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from .api import PrometheusAuthError, PrometheusClient, PrometheusError
 from .const import (
     CONF_ALERTMANAGER_URL,
+    CONF_LINK_APC,
+    CONF_LINK_UNIFI,
     CONF_SCAN_INTERVAL,
     CONF_STALE_HOURS,
     CONF_VERIFY_SSL,
@@ -94,6 +96,33 @@ class PrometheusHostsConfigFlow(ConfigFlow, domain=DOMAIN):
             errors=errors,
         )
 
+    async def async_step_reconfigure(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Change URL, credentials and Alertmanager later; an empty password keeps the old one."""
+        errors: dict[str, str] = {}
+        entry = self._get_reconfigure_entry()
+        if user_input is not None:
+            data = {**entry.data, **user_input}
+            data[CONF_URL] = data[CONF_URL].rstrip("/")
+            if not user_input.get(CONF_PASSWORD):
+                data[CONF_PASSWORD] = entry.data.get(CONF_PASSWORD)
+            if data.get(CONF_ALERTMANAGER_URL):
+                data[CONF_ALERTMANAGER_URL] = data[CONF_ALERTMANAGER_URL].rstrip("/")
+            else:
+                data.pop(CONF_ALERTMANAGER_URL, None)
+            if (error := await _validate(self.hass, data)) is None:
+                return self.async_update_reload_and_abort(
+                    entry, unique_id=data[CONF_URL], title=data[CONF_URL], data=data
+                )
+            errors["base"] = error
+        current = {k: v for k, v in entry.data.items() if k != CONF_PASSWORD}
+        return self.async_show_form(
+            step_id="reconfigure",
+            data_schema=self.add_suggested_values_to_schema(USER_SCHEMA, user_input or current),
+            errors=errors,
+        )
+
     @staticmethod
     @callback
     def async_get_options_flow(config_entry) -> OptionsFlow:
@@ -115,6 +144,8 @@ class PrometheusHostsOptionsFlow(OptionsFlow):
                     vol.Required(
                         CONF_STALE_HOURS, default=opts.get(CONF_STALE_HOURS, DEFAULT_STALE_HOURS)
                     ): vol.All(int, vol.Range(min=1, max=720)),
+                    vol.Required(CONF_LINK_UNIFI, default=opts.get(CONF_LINK_UNIFI, True)): bool,
+                    vol.Required(CONF_LINK_APC, default=opts.get(CONF_LINK_APC, True)): bool,
                 }
             ),
         )

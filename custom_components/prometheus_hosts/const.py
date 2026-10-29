@@ -6,6 +6,8 @@ CONF_VERIFY_SSL = "verify_ssl"
 CONF_ALERTMANAGER_URL = "alertmanager_url"
 CONF_SCAN_INTERVAL = "scan_interval"
 CONF_STALE_HOURS = "stale_hours"
+CONF_LINK_UNIFI = "link_unifi"
+CONF_LINK_APC = "link_apc"
 
 DEFAULT_SCAN_INTERVAL = 60
 DEFAULT_STALE_HOURS = 24
