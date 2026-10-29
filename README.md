@@ -15,6 +15,11 @@ after a grace period.
 | CPU / RAM / Disk | sensor (%) | from node_exporter or windows_exporter, only when available |
 | Galera-Knoten | sensor | Galera cluster size (MariaDB hosts) |
 
+An extra device **Monitoring** holds the overall numbers: open/critical/warning alerts (with names), `Watchdog fehlt`
+(alert pipeline broken), targets down, Kubernetes nodes not ready, failed pods, failed probes, next certificate
+expiry in days (certificates under 30 days as attribute) and number of checked certificates. With an Alertmanager URL
+configured, alerts come from Alertmanager (silenced and inhibited ones excluded), otherwise from Prometheus.
+
 Devices carry the kind as model (VM, Hyper-V, Proxmox, Switch, USV, Access Point, Server, ...), the `site` label as
 suggested area, and VMs are linked to their Hyper-V host (`via_device`) - the host's device page lists its VMs.
 
@@ -32,7 +37,8 @@ The queries live in `custom_components/prometheus_hosts/const.py`.
 
 HACS -> Custom repositories -> this repository (category Integration), install, restart Home Assistant, then
 Settings -> Devices & services -> Add integration -> Prometheus Hosts. Enter the Prometheus URL and, if needed,
-basic-auth user and password (stored in the config entry, not in YAML).
+basic-auth user and password (stored in the config entry, not in YAML), optionally the Alertmanager URL (same
+credentials). The icon ships in `brand/` (Home Assistant 2026.3+).
 
 Options: polling interval (default 60 s) and hours after which vanished hosts are removed (default 24).
 

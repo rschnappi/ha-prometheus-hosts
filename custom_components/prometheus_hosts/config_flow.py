@@ -13,6 +13,7 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .api import PrometheusAuthError, PrometheusClient, PrometheusError
 from .const import (
+    CONF_ALERTMANAGER_URL,
     CONF_SCAN_INTERVAL,
     CONF_STALE_HOURS,
     CONF_VERIFY_SSL,
@@ -26,6 +27,7 @@ USER_SCHEMA = vol.Schema(
         vol.Required(CONF_URL): str,
         vol.Optional(CONF_USERNAME): str,
         vol.Optional(CONF_PASSWORD): str,
+        vol.Optional(CONF_ALERTMANAGER_URL): str,
         vol.Optional(CONF_VERIFY_SSL, default=True): bool,
     }
 )
@@ -40,6 +42,11 @@ async def _validate(hass, data: dict[str, Any]) -> str | None:
         return "invalid_auth"
     except PrometheusError:
         return "cannot_connect"
+    if data.get(CONF_ALERTMANAGER_URL):
+        try:
+            await client.alertmanager_alerts(data[CONF_ALERTMANAGER_URL])
+        except PrometheusError:
+            return "cannot_connect_alertmanager"
     return None
 
 
@@ -50,6 +57,8 @@ class PrometheusHostsConfigFlow(ConfigFlow, domain=DOMAIN):
         errors: dict[str, str] = {}
         if user_input is not None:
             user_input[CONF_URL] = user_input[CONF_URL].rstrip("/")
+            if user_input.get(CONF_ALERTMANAGER_URL):
+                user_input[CONF_ALERTMANAGER_URL] = user_input[CONF_ALERTMANAGER_URL].rstrip("/")
             await self.async_set_unique_id(user_input[CONF_URL])
             self._abort_if_unique_id_configured()
             if (error := await _validate(self.hass, user_input)) is None:

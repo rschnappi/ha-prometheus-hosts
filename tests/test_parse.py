@@ -14,7 +14,7 @@ _pkg = types.ModuleType("ph")
 _pkg.__path__ = [str(_PKG_DIR)]
 sys.modules["ph"] = _pkg
 
-from ph.parse import build_hosts  # noqa: E402
+from ph.parse import build_hosts, build_overview  # noqa: E402
 
 
 def probe(instance, dienst, modul, target, value, **labels):
@@ -54,6 +54,14 @@ def base_results(web_ok=1, dns_ok=1, hv_ok=1, mysql_up=1, paused=0, win_up=1):
         "cpu": [row(37.26, instance="198.51.100.5:9100")],
         "ram": [row(55.0, instance="198.51.100.5:9100")],
         "win_disk": [row(71.55, instance="LABHV01")],
+        "targets_down": [row(0 if win_up else 1)],
+        "nodes_not_ready": [row(0)],
+        "pods_failed": [row(2)],
+        "probes_failed": [row(3 - web_ok - dns_ok - hv_ok)],
+        "cert_expiry": [
+            row(86400 * 90, instance="VM-WEB01", dienst="web"),
+            row(86400 * 12.4, instance="VM-DNS01", dienst="dns"),
+        ],
         "db": [
             row(mysql_up, __name__="mysql_up", instance="DB-NODE1"),
             row(3, __name__="mysql_global_status_wsrep_cluster_size", instance="DB-NODE1"),
@@ -151,3 +159,37 @@ def test_empty_results():
     assert build_hosts({}) == {}
     h = build_hosts({"checks": [probe("X1", "ping", "icmp", "bad", "NaN")]})["X1"]
     assert h.status == "ausgefallen"
+
+
+AM_ALERTS = [
+    {"labels": {"alertname": "Watchdog", "severity": "none"}, "status": {"state": "active"}},
+    {"labels": {"alertname": "HostDown", "severity": "critical"}, "status": {"state": "active"}},
+    {"labels": {"alertname": "DiskFull", "severity": "warning"}, "status": {"state": "active"}},
+    {"labels": {"alertname": "Silenced", "severity": "critical"}, "status": {"state": "suppressed"}},
+]
+
+
+def test_overview_numbers_and_certs():
+    o = build_overview(base_results(), AM_ALERTS)
+    assert (o.targets_down, o.nodes_not_ready, o.pods_failed, o.probes_failed) == (0, 0, 2, 0)
+    assert o.certs_checked == 2 and o.cert_min_days == 12.4
+    assert o.certs_expiring == ["dns VM-DNS01 12 d"]
+    assert (o.alerts_open, o.alerts_critical, o.alerts_warning) == (2, 1, 1)
+    assert o.alert_names == ["DiskFull", "HostDown"]
+    assert o.watchdog_missing is False
+
+
+def test_overview_changed_values():
+    o = build_overview(base_results(web_ok=0, dns_ok=0, win_up=0), AM_ALERTS[1:2])
+    assert o.targets_down == 1 and o.probes_failed == 2
+    assert o.watchdog_missing is True
+    assert o.alerts_open == 1 and o.alert_names == ["HostDown"]
+    o = build_overview({}, [])
+    assert o.certs_checked == 0 and o.cert_min_days is None and o.alerts_open == 0
+
+
+def test_overview_from_prometheus_alert_format():
+    alerts = [{"labels": {"alertname": "Watchdog"}, "state": "firing"},
+              {"labels": {"alertname": "X", "severity": "warning"}, "state": "pending"}]
+    o = build_overview({}, alerts)
+    assert o.watchdog_missing is False and o.alerts_open == 0

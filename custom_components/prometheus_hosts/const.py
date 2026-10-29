@@ -3,6 +3,7 @@
 DOMAIN = "prometheus_hosts"
 
 CONF_VERIFY_SSL = "verify_ssl"
+CONF_ALERTMANAGER_URL = "alertmanager_url"
 CONF_SCAN_INTERVAL = "scan_interval"
 CONF_STALE_HOURS = "stale_hours"
 
@@ -28,6 +29,13 @@ QUERIES = {
     ),
     "win_disk": (
         "max by (instance) ((1 - windows_logical_disk_free_bytes / windows_logical_disk_size_bytes) * 100)"
+    ),
+    "targets_down": "count(up == 0) or vector(0)",
+    "nodes_not_ready": 'count(kube_node_status_condition{condition="Ready",status="true"} == 0) or vector(0)',
+    "pods_failed": 'sum(kube_pod_status_phase{phase=~"Pending|Failed|Unknown"}) or vector(0)',
+    "probes_failed": "count(probe_success == 0) or vector(0)",
+    "cert_expiry": (
+        '(probe_ssl_earliest_cert_expiry{job=~"blackbox.*"} > 0) - time()'
     ),
     "db": (
         '{__name__=~"mysql_up|mysql_global_status_wsrep_ready|mysql_global_status_wsrep_cluster_size'
@@ -67,3 +75,9 @@ STATUS_PARTIAL = "teilweise"
 STATUS_DOWN = "ausgefallen"
 STATUS_UNKNOWN = "unbekannt"
 STATUS_OPTIONS = [STATUS_OK, STATUS_PARTIAL, STATUS_DOWN, STATUS_UNKNOWN]
+
+# Overview device (cluster-wide numbers and alerts).
+OVERVIEW_KEY = "_monitoring"
+OVERVIEW_NAME = "Monitoring"
+WATCHDOG_ALERT = "Watchdog"
+CERT_WARN_DAYS = 30

@@ -13,9 +13,14 @@ from homeassistant.helpers import device_registry as dr, entity_registry as er
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.prometheus_hosts.api import PrometheusAuthError
-from custom_components.prometheus_hosts.const import CONF_STALE_HOURS, DOMAIN
+from custom_components.prometheus_hosts.const import (
+    CONF_ALERTMANAGER_URL,
+    CONF_STALE_HOURS,
+    DOMAIN,
+    OVERVIEW_KEY,
+)
 
-from .test_parse import base_results, probe
+from .test_parse import AM_ALERTS, base_results, probe
 
 CLIENT = "custom_components.prometheus_hosts.api.PrometheusClient"
 URL = "https://prometheus.example.test"
@@ -27,12 +32,16 @@ class FakePrometheus:
     def __init__(self) -> None:
         self.results = base_results()
         self.alerts = []
+        self.am_alerts = []
 
     async def query_all(self, queries):
         return self.results
 
     async def get_alerts(self):
         return self.alerts
+
+    async def get_am_alerts(self, url):
+        return self.am_alerts
 
 
 @pytest.fixture
@@ -41,16 +50,17 @@ def prom():
     with (
         patch(f"{CLIENT}.query_all", side_effect=fake.query_all),
         patch(f"{CLIENT}.alerts", side_effect=fake.get_alerts),
+        patch(f"{CLIENT}.alertmanager_alerts", side_effect=fake.get_am_alerts),
         patch(f"{CLIENT}.query", AsyncMock(return_value=[])),
     ):
         yield fake
 
 
-async def setup_entry(hass: HomeAssistant, options=None) -> MockConfigEntry:
+async def setup_entry(hass: HomeAssistant, options=None, data=None) -> MockConfigEntry:
     entry = MockConfigEntry(
         domain=DOMAIN,
         unique_id=URL,
-        data={CONF_URL: URL, CONF_USERNAME: "user", CONF_PASSWORD: "pw"},
+        data=data or {CONF_URL: URL, CONF_USERNAME: "user", CONF_PASSWORD: "pw"},
         options=options or {},
     )
     entry.add_to_hass(hass)
@@ -63,6 +73,13 @@ def entity_id(hass, entry, platform, host, suffix):
     return er.async_get(hass).async_get_entity_id(
         platform, DOMAIN, f"{entry.entry_id}_{host}_{suffix}"
     )
+
+
+def get_device(hass, key):
+    for dev in dr.async_get(hass).devices.values():
+        if (DOMAIN, key) in dev.identifiers:
+            return dev
+    return None
 
 
 async def refresh(hass, entry):
@@ -94,6 +111,7 @@ async def test_devices_and_entities(hass: HomeAssistant, prom) -> None:
     devices = {
         next(k for d, k in dev.identifiers if d == DOMAIN): dev
         for dev in dr.async_entries_for_config_entry(devreg, entry.entry_id)
+        if (DOMAIN, OVERVIEW_KEY) not in dev.identifiers
     }
     assert set(devices) == {"VM-WEB01", "VM-DNS01", "LABHV01", "DB-NODE1", "NODE-A"}
     assert devices["VM-WEB01"].via_device_id == devices["LABHV01"].id
@@ -155,7 +173,7 @@ async def test_new_host_and_new_check_appear(hass: HomeAssistant, prom) -> None:
     prom.results["checks"].append(probe("VM-WEB01", "ssh", "tcp_connect", "192.0.2.10:22", 0, site="lab"))
     await refresh(hass, entry)
 
-    dev = dr.async_get(hass).async_get_device(identifiers={(DOMAIN, "NEW-SW01")})
+    dev = get_device(hass, "NEW-SW01")
     assert dev is not None and dev.model == "Switch"
     assert hass.states.get(entity_id(hass, entry, "sensor", "NEW-SW01", "status")).state == "ok"
     ssh = entity_id(hass, entry, "binary_sensor", "VM-WEB01", "check_ssh_tcp_connect_192_0_2_10_22")
@@ -165,22 +183,48 @@ async def test_new_host_and_new_check_appear(hass: HomeAssistant, prom) -> None:
 
 async def test_vanished_host_unavailable_then_removed(hass: HomeAssistant, prom, freezer) -> None:
     entry = await setup_entry(hass, options={CONF_STALE_HOURS: 1})
-    devreg = dr.async_get(hass)
     status_id = entity_id(hass, entry, "sensor", "VM-DNS01", "status")
 
     prom.results["checks"] = [c for c in prom.results["checks"] if c["metric"]["instance"] != "VM-DNS01"]
     await refresh(hass, entry)
     assert hass.states.get(status_id).state == STATE_UNAVAILABLE
-    assert devreg.async_get_device(identifiers={(DOMAIN, "VM-DNS01")}) is not None
+    assert get_device(hass, "VM-DNS01") is not None
 
     freezer.tick(timedelta(hours=2))
     await refresh(hass, entry)
-    assert devreg.async_get_device(identifiers={(DOMAIN, "VM-DNS01")}) is None
+    assert get_device(hass, "VM-DNS01") is None
     assert er.async_get(hass).async_get(status_id) is None
 
     # The host comes back: device and entities are created again.
     prom.results = base_results()
     await refresh(hass, entry)
-    assert devreg.async_get_device(identifiers={(DOMAIN, "VM-DNS01")}) is not None
+    assert get_device(hass, "VM-DNS01") is not None
     new_status = entity_id(hass, entry, "sensor", "VM-DNS01", "status")
     assert hass.states.get(new_status).state == "ok"
+
+
+async def test_overview_device(hass: HomeAssistant, prom) -> None:
+    entry = await setup_entry(
+        hass,
+        data={CONF_URL: URL, CONF_USERNAME: "u", CONF_PASSWORD: "p",
+              CONF_ALERTMANAGER_URL: "https://alertmanager.example.test"},
+    )
+    assert get_device(hass, OVERVIEW_KEY).name == "Monitoring"
+    watchdog = entity_id(hass, entry, "binary_sensor", OVERVIEW_KEY, "watchdog_missing")
+    open_id = entity_id(hass, entry, "sensor", OVERVIEW_KEY, "alerts_open")
+    cert_id = entity_id(hass, entry, "sensor", OVERVIEW_KEY, "cert_min_days")
+    assert hass.states.get(watchdog).state == "on"
+    assert hass.states.get(open_id).state == "0"
+    assert float(hass.states.get(cert_id).state) == 12.4
+    assert hass.states.get(cert_id).attributes["certs_expiring"] == ["dns VM-DNS01 12 d"]
+
+    prom.am_alerts = AM_ALERTS
+    await refresh(hass, entry)
+    assert hass.states.get(watchdog).state == "off"
+    assert hass.states.get(open_id).state == "2"
+    assert hass.states.get(open_id).attributes["alert_names"] == ["DiskFull", "HostDown"]
+
+    # Hosts never remove the overview device, even when Prometheus returns nothing.
+    prom.results = {}
+    await refresh(hass, entry)
+    assert get_device(hass, OVERVIEW_KEY) is not None

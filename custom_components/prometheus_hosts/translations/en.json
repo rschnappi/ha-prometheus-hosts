@@ -4,9 +4,10 @@
       "user": {
         "title": "Prometheus",
         "data": {
-          "url": "URL (e.g. https://prometheus.example.com)",
+          "url": "Prometheus URL",
           "username": "Username",
           "password": "Password",
+          "alertmanager_url": "Alertmanager URL (optional)",
           "verify_ssl": "Verify SSL certificate"
         }
       },
@@ -20,7 +21,8 @@
     },
     "error": {
       "cannot_connect": "Cannot connect to Prometheus",
-      "invalid_auth": "Invalid credentials"
+      "invalid_auth": "Invalid credentials",
+      "cannot_connect_alertmanager": "Cannot connect to Alertmanager"
     },
     "abort": {
       "already_configured": "This Prometheus instance is already configured",

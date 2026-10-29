@@ -4,9 +4,10 @@
       "user": {
         "title": "Prometheus",
         "data": {
-          "url": "URL (z. B. https://prometheus.example.com)",
+          "url": "Prometheus-URL",
           "username": "Benutzer",
           "password": "Passwort",
+          "alertmanager_url": "Alertmanager-URL (optional)",
           "verify_ssl": "Zertifikat pruefen"
         }
       },
@@ -20,7 +21,8 @@
     },
     "error": {
       "cannot_connect": "Prometheus nicht erreichbar",
-      "invalid_auth": "Anmeldung abgelehnt"
+      "invalid_auth": "Anmeldung abgelehnt",
+      "cannot_connect_alertmanager": "Alertmanager nicht erreichbar"
     },
     "abort": {
       "already_configured": "Diese Prometheus-Instanz ist bereits eingerichtet",

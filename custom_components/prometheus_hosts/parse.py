@@ -10,6 +10,7 @@ from datetime import datetime
 import re
 
 from .const import (
+    CERT_WARN_DAYS,
     DEFAULT_REASON,
     EXPORTER_JOBS,
     NODE_EXPORTER_JOB,
@@ -19,6 +20,7 @@ from .const import (
     STATUS_OK,
     STATUS_PARTIAL,
     STATUS_UNKNOWN,
+    WATCHDOG_ALERT,
 )
 
 _IPV4 = re.compile(r"^\d+\.\d+\.\d+\.\d+$")
@@ -232,3 +234,70 @@ def build_hosts(results: dict[str, list[dict]], alerts: list[dict] | None = None
                 c.since = since
 
     return b.hosts
+
+
+@dataclass
+class Overview:
+    """Cluster-wide numbers for the Monitoring device."""
+
+    targets_down: int = 0
+    nodes_not_ready: int = 0
+    pods_failed: int = 0
+    probes_failed: int = 0
+    certs_checked: int = 0
+    cert_min_days: float | None = None
+    certs_expiring: list[str] = field(default_factory=list)
+    alerts_open: int = 0
+    alerts_critical: int = 0
+    alerts_warning: int = 0
+    alert_names: list[str] = field(default_factory=list)
+    watchdog_missing: bool = True
+
+
+def firing_alert_labels(alerts: list[dict]) -> list[dict]:
+    """Labels of active alerts from Alertmanager (v2) or Prometheus (/api/v1/alerts)."""
+    out = []
+    for a in alerts or []:
+        status = a.get("status")
+        if isinstance(status, dict):
+            if status.get("state") != "active":
+                continue
+        elif a.get("state") != "firing":
+            continue
+        out.append(a.get("labels", {}))
+    return out
+
+
+def build_overview(results: dict[str, list[dict]], alerts: list[dict] | None) -> Overview:
+    o = Overview()
+
+    def scalar(name: str) -> int:
+        rows = results.get(name) or []
+        v = _value(rows[0]) if rows else None
+        return int(v) if v is not None and v == v else 0
+
+    o.targets_down = scalar("targets_down")
+    o.nodes_not_ready = scalar("nodes_not_ready")
+    o.pods_failed = scalar("pods_failed")
+    o.probes_failed = scalar("probes_failed")
+
+    certs = []
+    for row in results.get("cert_expiry", []):
+        v = _value(row)
+        if v is None:
+            continue
+        m = row.get("metric", {})
+        certs.append((v / 86400, m.get("dienst") or m.get("instance") or "?", m.get("instance", "?")))
+    certs.sort()
+    o.certs_checked = len(certs)
+    o.cert_min_days = round(certs[0][0], 1) if certs else None
+    o.certs_expiring = [f"{d} {i} {round(days)} d" for days, d, i in certs if days < CERT_WARN_DAYS]
+
+    labels = firing_alert_labels(alerts or [])
+    o.watchdog_missing = not any(l.get("alertname") == WATCHDOG_ALERT for l in labels)
+    real = [l for l in labels if l.get("alertname") != WATCHDOG_ALERT]
+    o.alerts_open = len(real)
+    o.alerts_critical = sum(1 for l in real if l.get("severity") == "critical")
+    o.alerts_warning = sum(1 for l in real if l.get("severity") == "warning")
+    o.alert_names = sorted({l.get("alertname", "?") for l in real})
+    return o

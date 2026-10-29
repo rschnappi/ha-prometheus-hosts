@@ -7,7 +7,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .coordinator import PrometheusHostsConfigEntry, PrometheusHostsCoordinator
-from .entity import HostEntity, setup_dynamic
+from .entity import HostEntity, OverviewEntity, setup_dynamic
 from .parse import Check, Host
 
 
@@ -19,6 +19,22 @@ async def async_setup_entry(
             yield check.key, CheckBinarySensor(coordinator, host.key, check)
 
     setup_dynamic(entry, async_add_entities, factory)
+    async_add_entities([WatchdogBinarySensor(entry.runtime_data)])
+
+
+class WatchdogBinarySensor(OverviewEntity, BinarySensorEntity):
+    """On (problem) when the always-firing Watchdog alert is missing: alerting pipeline broken."""
+
+    _attr_name = "Watchdog fehlt"
+    _attr_device_class = BinarySensorDeviceClass.PROBLEM
+
+    def __init__(self, coordinator: PrometheusHostsCoordinator) -> None:
+        super().__init__(coordinator, "watchdog_missing")
+
+    @property
+    def is_on(self) -> bool | None:
+        data = self.coordinator.data
+        return data.overview.watchdog_missing if data else None
 
 
 class CheckBinarySensor(HostEntity, BinarySensorEntity):

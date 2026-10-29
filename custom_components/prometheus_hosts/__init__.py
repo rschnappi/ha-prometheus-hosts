@@ -8,7 +8,7 @@ from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .api import PrometheusClient
-from .const import CONF_VERIFY_SSL, DOMAIN
+from .const import CONF_VERIFY_SSL, DOMAIN, OVERVIEW_KEY
 from .coordinator import PrometheusHostsConfigEntry, PrometheusHostsCoordinator
 
 PLATFORMS = [Platform.BINARY_SENSOR, Platform.SENSOR]
@@ -39,5 +39,8 @@ async def async_remove_config_entry_device(
     hass: HomeAssistant, entry: PrometheusHostsConfigEntry, device: dr.DeviceEntry
 ) -> bool:
     """Allow deleting a device in the UI once Prometheus no longer reports the host."""
-    hosts = entry.runtime_data.data or {}
-    return not any(d == DOMAIN and k in hosts for d, k in device.identifiers)
+    data = entry.runtime_data.data
+    hosts = data.hosts if data else {}
+    return not any(
+        d == DOMAIN and (k in hosts or k == OVERVIEW_KEY) for d, k in device.identifiers
+    )

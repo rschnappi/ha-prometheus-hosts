@@ -13,7 +13,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import STATUS_OPTIONS
 from .coordinator import PrometheusHostsConfigEntry, PrometheusHostsCoordinator
-from .entity import HostEntity, setup_dynamic
+from .entity import HostEntity, OverviewEntity, setup_dynamic
 from .parse import Host
 
 # metric key -> (name, unit, icon)
@@ -37,6 +37,46 @@ async def async_setup_entry(
                 yield metric, MetricSensor(coordinator, host.key, metric)
 
     setup_dynamic(entry, async_add_entities, factory)
+    coordinator = entry.runtime_data
+    async_add_entities(OverviewSensor(coordinator, key) for key in OVERVIEW_SENSORS)
+
+
+# overview key -> (name, unit, icon, attribute with details)
+OVERVIEW_SENSORS = {
+    "alerts_open": ("Alarme offen", None, "mdi:bell-alert", "alert_names"),
+    "alerts_critical": ("Alarme kritisch", None, "mdi:alert-octagon", None),
+    "alerts_warning": ("Alarme Warnung", None, "mdi:alert", None),
+    "targets_down": ("Ziele down", None, "mdi:target", None),
+    "nodes_not_ready": ("Knoten nicht bereit", None, "mdi:server-off", None),
+    "pods_failed": ("Pods fehlerhaft", None, "mdi:kubernetes", None),
+    "probes_failed": ("Pruefungen fehlgeschlagen", None, "mdi:lan-disconnect", None),
+    "cert_min_days": ("Zertifikat Ablauf naechstes", UnitOfTime.DAYS, "mdi:certificate", "certs_expiring"),
+    "certs_checked": ("Zertifikate geprueft", None, "mdi:certificate-outline", None),
+}
+
+
+class OverviewSensor(OverviewEntity, SensorEntity):
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _unrecorded_attributes = frozenset({"alert_names", "certs_expiring"})
+
+    def __init__(self, coordinator: PrometheusHostsCoordinator, key: str) -> None:
+        super().__init__(coordinator, key)
+        name, unit, icon, self._detail = OVERVIEW_SENSORS[key]
+        self._attr_name = name
+        self._attr_native_unit_of_measurement = unit
+        self._attr_icon = icon
+
+    @property
+    def native_value(self):
+        data = self.coordinator.data
+        return getattr(data.overview, self.key) if data else None
+
+    @property
+    def extra_state_attributes(self) -> dict | None:
+        data = self.coordinator.data
+        if not self._detail or not data:
+            return None
+        return {self._detail: getattr(data.overview, self._detail)}
 
 
 class StatusSensor(HostEntity, SensorEntity):

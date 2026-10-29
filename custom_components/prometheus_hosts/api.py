@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 
 import aiohttp
 
@@ -26,13 +27,16 @@ class PrometheusClient:
     ) -> None:
         self._session = session
         self._url = url.rstrip("/")
-        self._auth = aiohttp.BasicAuth(username, password or "") if username else None
+        self._headers = {}
+        if username:
+            token = base64.b64encode(f"{username}:{password or ''}".encode()).decode()
+            self._headers["Authorization"] = f"Basic {token}"
         self._timeout = aiohttp.ClientTimeout(total=timeout)
 
-    async def _get(self, path: str, params: dict | None = None) -> dict:
+    async def _get(self, path: str, params: dict | None = None, base: str | None = None):
         try:
             async with self._session.get(
-                f"{self._url}{path}", params=params, auth=self._auth, timeout=self._timeout
+                f"{base or self._url}{path}", params=params, headers=self._headers, timeout=self._timeout
             ) as resp:
                 if resp.status in (401, 403):
                     raise PrometheusAuthError(f"HTTP {resp.status}")
@@ -41,6 +45,8 @@ class PrometheusClient:
                 body = await resp.json()
         except (aiohttp.ClientError, asyncio.TimeoutError, ValueError) as err:
             raise PrometheusError(str(err)) from err
+        if base is not None:
+            return body
         if body.get("status") != "success":
             raise PrometheusError(body.get("error", "unknown error"))
         return body["data"]
@@ -52,6 +58,15 @@ class PrometheusClient:
     async def alerts(self) -> list[dict]:
         data = await self._get("/api/v1/alerts")
         return data.get("alerts", [])
+
+    async def alertmanager_alerts(self, url: str) -> list[dict]:
+        """Active, not silenced, not inhibited alerts from Alertmanager (API v2)."""
+        body = await self._get(
+            "/api/v2/alerts",
+            {"active": "true", "silenced": "false", "inhibited": "false"},
+            base=url.rstrip("/"),
+        )
+        return body if isinstance(body, list) else []
 
     async def query_all(self, queries: dict[str, str]) -> dict[str, list[dict]]:
         """Run all queries in parallel; a failing single query yields an empty result."""
