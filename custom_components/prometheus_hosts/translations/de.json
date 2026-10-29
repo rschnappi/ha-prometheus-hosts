@@ -1,0 +1,40 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Prometheus",
+        "data": {
+          "url": "URL (z. B. https://prometheus.example.com)",
+          "username": "Benutzer",
+          "password": "Passwort",
+          "verify_ssl": "Zertifikat pruefen"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Anmeldung erneuern",
+        "data": {
+          "username": "Benutzer",
+          "password": "Passwort"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Prometheus nicht erreichbar",
+      "invalid_auth": "Anmeldung abgelehnt"
+    },
+    "abort": {
+      "already_configured": "Diese Prometheus-Instanz ist bereits eingerichtet",
+      "reauth_successful": "Anmeldung erneuert"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "data": {
+          "scan_interval": "Abfrageintervall (Sekunden)",
+          "stale_hours": "Verschwundene Hosts entfernen nach (Stunden)"
+        }
+      }
+    }
+  }
+}

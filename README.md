@@ -1,0 +1,42 @@
+# Prometheus Hosts
+
+Home Assistant integration that turns every host known to Prometheus into a **device**, with all of its checks and
+metrics as entities underneath it. New hosts appear automatically, vanished hosts become unavailable and are removed
+after a grace period.
+
+## What you get per host
+
+| Entity | Type | Content |
+|---|---|---|
+| Status | sensor (enum) | `ok`, `teilweise` (some checks fail), `ausgefallen` (all fail); site, kind, IP, hypervisor as attributes |
+| Pruefungen ok | sensor | number of passing checks; total and failing services as attributes |
+| `<service> · <target>` | binary_sensor (connectivity) | one per check, `on` = ok; reason and `seit` (alert start) when failing |
+| Antwortzeit | sensor (ms) | mean blackbox probe duration |
+| CPU / RAM / Disk | sensor (%) | from node_exporter or windows_exporter, only when available |
+| Galera-Knoten | sensor | Galera cluster size (MariaDB hosts) |
+
+Devices carry the kind as model (VM, Hyper-V, Proxmox, Switch, USV, Access Point, Server, ...), the `site` label as
+suggested area, and VMs are linked to their Hyper-V host (`via_device`) - the host's device page lists its VMs.
+
+## Data sources (read-only)
+
+- `probe_success{job=~"blackbox.*"}` with labels `instance`, `dienst`, `modul`, `target`, `site`, `rolle`, `cluster`, `tenant`
+- `up` of the jobs `windows-exporter`, `node-exporter-linux`, `mysqld-exporter`, `proxysql`; `node-exporter` via `node_uname_info`
+- node_exporter / windows_exporter CPU, memory and filesystem metrics
+- `mysql_up`, `mysql_global_status_wsrep_*`, `proxysql_*`
+- `/api/v1/alerts` for the start time of failing checks
+
+The queries live in `custom_components/prometheus_hosts/const.py`.
+
+## Installation
+
+HACS -> Custom repositories -> this repository (category Integration), install, restart Home Assistant, then
+Settings -> Devices & services -> Add integration -> Prometheus Hosts. Enter the Prometheus URL and, if needed,
+basic-auth user and password (stored in the config entry, not in YAML).
+
+Options: polling interval (default 60 s) and hours after which vanished hosts are removed (default 24).
+
+## Tests
+
+`tests/test_parse.py` runs without Home Assistant (`pytest tests/test_parse.py`); `tests/test_integration.py` needs
+`pytest-homeassistant-custom-component` (Linux, see the GitHub workflow). All test data is invented.
