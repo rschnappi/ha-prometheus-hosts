@@ -70,6 +70,16 @@ REASONS = {
 }
 DEFAULT_REASON = "Pruefung fehlgeschlagen"
 
+# Short label of the check type, used to tell checks with the same service and target apart.
+MODULE_LABELS = {
+    "icmp": "Ping",
+    "tcp_connect": "Port",
+    "tls_connect": "TLS",
+    "dns_soa": "DNS",
+    "ldap_tcp": "LDAP",
+    "http_2xx": "HTTP",
+}
+
 STATUS_OK = "ok"
 STATUS_PARTIAL = "teilweise"
 STATUS_DOWN = "ausgefallen"

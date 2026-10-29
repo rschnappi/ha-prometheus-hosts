@@ -193,3 +193,25 @@ def test_overview_from_prometheus_alert_format():
               {"labels": {"alertname": "X", "severity": "warning"}, "state": "pending"}]
     o = build_overview({}, alerts)
     assert o.watchdog_missing is False and o.alerts_open == 0
+
+
+def test_check_names_unique_per_host():
+    res = {"checks": [
+        probe("MAIL01", "mail", "icmp", "192.0.2.48", 1),
+        probe("MAIL01", "mail", "tcp_connect", "192.0.2.48:25", 1),
+        probe("MAIL01", "mail", "http_2xx", "https://192.0.2.48/owa/health", 1),
+        probe("MAIL01", "mail", "http_2xx", "https://192.0.2.48/ecp/health", 1),
+        probe("MAIL01", "mail", "tls_connect", "192.0.2.48", 1),
+        probe("MAIL01", "web", "http_2xx", "https://www.example.test/", 1),
+    ]}
+    names = sorted(c.name for c in build_hosts(res)["MAIL01"].checks.values())
+    assert names == [
+        "mail · 192.0.2.48 (HTTP) /ecp/health",
+        "mail · 192.0.2.48 (HTTP) /owa/health",
+        "mail · 192.0.2.48 (Ping)",
+        "mail · 192.0.2.48 (TLS)",
+        "mail · 192.0.2.48:25",
+        "web · www.example.test",
+    ]
+    db_names = {c.name for c in build_hosts(base_results())["DB-NODE1"].checks.values()}
+    assert "ProxySQL-Backend · 192.0.2.31:3306" in db_names and "MariaDB" in db_names

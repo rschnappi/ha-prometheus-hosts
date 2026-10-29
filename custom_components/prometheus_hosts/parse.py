@@ -13,6 +13,7 @@ from .const import (
     CERT_WARN_DAYS,
     DEFAULT_REASON,
     EXPORTER_JOBS,
+    MODULE_LABELS,
     NODE_EXPORTER_JOB,
     NODE_NAME_STRIP_PREFIX,
     REASONS,
@@ -36,6 +37,7 @@ class Check:
     target: str
     ok: bool
     since: datetime | None = None
+    name: str = ""
 
     @property
     def reason(self) -> str | None:
@@ -46,6 +48,31 @@ class Check:
         """Target without scheme and path, e.g. 10.0.0.5:443."""
         t = re.sub(r"^[a-z]+://", "", self.target)
         return t.split("/")[0]
+
+    @property
+    def path(self) -> str:
+        """Path part of an URL target, e.g. /owa/healthcheck.htm."""
+        t = re.sub(r"^[a-z]+://", "", self.target)
+        return "/" + t.split("/", 1)[1] if "/" in t else ""
+
+
+def _assign_names(checks: dict[str, Check]) -> None:
+    """Unique display names per host: service and target; on a clash add the check type, then the path."""
+    for c in checks.values():
+        c.name = f"{c.service} · {c.short_target}" if c.short_target else c.service
+
+    def clashes() -> list[Check]:
+        count: dict[str, int] = {}
+        for c in checks.values():
+            count[c.name] = count.get(c.name, 0) + 1
+        return [c for c in checks.values() if count[c.name] > 1]
+
+    for c in clashes():
+        if c.module:
+            c.name = f"{c.name} ({MODULE_LABELS.get(c.module, c.module)})"
+    for c in clashes():
+        if c.path:
+            c.name = f"{c.name} {c.path}"
 
 
 @dataclass
@@ -233,6 +260,8 @@ def build_hosts(results: dict[str, list[dict]], alerts: list[dict] | None = None
             if c.since is None or since < c.since:
                 c.since = since
 
+    for h in b.hosts.values():
+        _assign_names(h.checks)
     return b.hosts
 
 

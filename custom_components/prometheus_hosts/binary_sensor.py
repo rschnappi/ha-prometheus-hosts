@@ -44,8 +44,7 @@ class CheckBinarySensor(HostEntity, BinarySensorEntity):
     def __init__(self, coordinator: PrometheusHostsCoordinator, host_key: str, check: Check) -> None:
         super().__init__(coordinator, host_key, f"check_{check.key}")
         self.check_key = check.key
-        target = check.short_target
-        self._attr_name = f"{check.service} · {target}" if target else check.service
+        self._attr_name = check.name
 
     @property
     def check(self) -> Check | None:

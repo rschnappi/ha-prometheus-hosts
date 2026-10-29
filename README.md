@@ -10,7 +10,7 @@ after a grace period.
 |---|---|---|
 | Status | sensor (enum) | `ok`, `teilweise` (some checks fail), `ausgefallen` (all fail); site, kind, IP, hypervisor as attributes |
 | Pruefungen ok | sensor | number of passing checks; total and failing services as attributes |
-| `<service> · <target>` | binary_sensor (connectivity) | one per check, `on` = ok; reason and `seit` (alert start) when failing |
+| `<service> · <target>` | binary_sensor (connectivity) | one per check, `on` = ok; reason and `seit` (alert start) when failing; on a name clash the check type (Ping, Port, TLS, HTTP ...) and then the URL path are added |
 | Antwortzeit | sensor (ms) | mean blackbox probe duration |
 | CPU / RAM / Disk | sensor (%) | from node_exporter or windows_exporter, only when available |
 | Galera-Knoten | sensor | Galera cluster size (MariaDB hosts) |
