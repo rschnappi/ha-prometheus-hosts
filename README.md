@@ -27,7 +27,7 @@ Gestartet, Clients, CPU, Speicher and Temperatur (whatever the UniFi device has)
 entity changes, and links to the UniFi device page. Since Home Assistant 2026.8 devices of different integrations are
 no longer merged, so this is how both sources end up on one device page.
 
-An extra device **Monitoring** holds the overall numbers: open/critical/warning alerts (with names), `Watchdog fehlt`
+An extra device **Monitoring** holds the overall numbers: hosts total / down / partially down (with names), number of checks, open/critical/warning alerts (with names), `Watchdog fehlt`
 (alert pipeline broken), targets down, Kubernetes nodes not ready, failed pods, failed probes, next certificate
 expiry in days (certificates under 30 days as attribute) and number of checked certificates. With an Alertmanager URL
 configured, alerts come from Alertmanager (silenced and inhibited ones excluded), otherwise from Prometheus.

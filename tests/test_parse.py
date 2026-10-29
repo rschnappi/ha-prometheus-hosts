@@ -215,3 +215,16 @@ def test_check_names_unique_per_host():
     ]
     db_names = {c.name for c in build_hosts(base_results())["DB-NODE1"].checks.values()}
     assert "ProxySQL-Backend · 192.0.2.31:3306" in db_names and "MariaDB" in db_names
+
+
+def test_overview_host_counts_follow_changes():
+    hosts = build_hosts(base_results())
+    o = build_overview(base_results(), [], hosts)
+    assert (o.hosts_total, o.hosts_down, o.hosts_partial) == (5, 0, 0)
+    assert o.checks_total == sum(len(h.checks) for h in hosts.values())
+
+    res = base_results(web_ok=0, hv_ok=0, win_up=0)
+    o = build_overview(res, [], build_hosts(res))
+    assert o.hosts_down_names == ["LABHV01"]
+    assert o.hosts_partial_names == ["VM-WEB01"]
+    assert (o.hosts_down, o.hosts_partial) == (1, 1)

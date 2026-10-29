@@ -98,7 +98,7 @@ class PrometheusHostsCoordinator(DataUpdateCoordinator[Snapshot]):
                     per_domain[dev.domain] = per_domain.get(dev.domain, 0) + 1
             _LOGGER.info("Linked devices: %d of %d hosts %s", len(links), len(hosts), per_domain)
         self._sync_devices(hosts, links)
-        return Snapshot(hosts=hosts, overview=build_overview(results, am_alerts), links=links)
+        return Snapshot(hosts=hosts, overview=build_overview(results, am_alerts, hosts), links=links)
 
     def _sync_devices(self, hosts: dict[str, Host], links: dict[str, list[LinkedDevice]]) -> None:
         """Create/update one device per host, hypervisors first, and drop stale ones."""

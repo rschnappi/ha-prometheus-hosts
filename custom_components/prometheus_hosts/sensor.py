@@ -45,6 +45,10 @@ async def async_setup_entry(
 
 # overview key -> (name, unit, icon, attribute with details)
 OVERVIEW_SENSORS = {
+    "hosts_total": ("Hosts gesamt", None, "mdi:server-network", None),
+    "hosts_down": ("Hosts ausgefallen", None, "mdi:server-off", "hosts_down_names"),
+    "hosts_partial": ("Hosts teilweise gestoert", None, "mdi:server-minus", "hosts_partial_names"),
+    "checks_total": ("Pruefungen gesamt", None, "mdi:format-list-checks", None),
     "alerts_open": ("Alarme offen", None, "mdi:bell-alert", "alert_names"),
     "alerts_critical": ("Alarme kritisch", None, "mdi:alert-octagon", None),
     "alerts_warning": ("Alarme Warnung", None, "mdi:alert", None),
@@ -59,7 +63,9 @@ OVERVIEW_SENSORS = {
 
 class OverviewSensor(OverviewEntity, SensorEntity):
     _attr_state_class = SensorStateClass.MEASUREMENT
-    _unrecorded_attributes = frozenset({"alert_names", "certs_expiring"})
+    _unrecorded_attributes = frozenset(
+        {"alert_names", "certs_expiring", "hosts_down_names", "hosts_partial_names"}
+    )
 
     def __init__(self, coordinator: PrometheusHostsCoordinator, key: str) -> None:
         super().__init__(coordinator, key)

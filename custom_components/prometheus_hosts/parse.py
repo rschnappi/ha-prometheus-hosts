@@ -281,6 +281,12 @@ class Overview:
     alerts_warning: int = 0
     alert_names: list[str] = field(default_factory=list)
     watchdog_missing: bool = True
+    hosts_total: int = 0
+    hosts_down: int = 0
+    hosts_partial: int = 0
+    checks_total: int = 0
+    hosts_down_names: list[str] = field(default_factory=list)
+    hosts_partial_names: list[str] = field(default_factory=list)
 
 
 def firing_alert_labels(alerts: list[dict]) -> list[dict]:
@@ -297,8 +303,20 @@ def firing_alert_labels(alerts: list[dict]) -> list[dict]:
     return out
 
 
-def build_overview(results: dict[str, list[dict]], alerts: list[dict] | None) -> Overview:
+def build_overview(
+    results: dict[str, list[dict]], alerts: list[dict] | None, hosts: dict[str, Host] | None = None
+) -> Overview:
     o = Overview()
+
+    for h in sorted((hosts or {}).values(), key=lambda h: h.name.upper()):
+        o.hosts_total += 1
+        o.checks_total += len(h.checks)
+        if h.status == STATUS_DOWN:
+            o.hosts_down_names.append(h.name)
+        elif h.status == STATUS_PARTIAL:
+            o.hosts_partial_names.append(h.name)
+    o.hosts_down = len(o.hosts_down_names)
+    o.hosts_partial = len(o.hosts_partial_names)
 
     def scalar(name: str) -> int:
         rows = results.get(name) or []
