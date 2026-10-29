@@ -41,6 +41,7 @@ async def async_setup_entry(
     setup_dynamic(entry, async_add_entities, mirror_factory("sensor", MirrorSensor))
     coordinator = entry.runtime_data
     async_add_entities(OverviewSensor(coordinator, key) for key in OVERVIEW_SENSORS)
+    async_add_entities(OverviewTextSensor(coordinator, key) for key in OVERVIEW_TEXT)
 
 
 # overview key -> (name, unit, icon, attribute with details)
@@ -85,6 +86,31 @@ class OverviewSensor(OverviewEntity, SensorEntity):
         if not self._detail or not data:
             return None
         return {self._detail: getattr(data.overview, self._detail)}
+
+
+# overview key -> (name, icon, list attribute, text when the list is empty)
+OVERVIEW_TEXT = {
+    "alert_list": ("Alarmliste", "mdi:format-list-bulleted", "alert_names", "keine"),
+    "cert_list": ("Zertifikate Ablaufliste", "mdi:format-list-bulleted", "certs_expiring", "keine unter 30 Tagen"),
+}
+
+
+class OverviewTextSensor(OverviewEntity, SensorEntity):
+    """A list from the overview as comma-separated text (max. 250 characters)."""
+
+    def __init__(self, coordinator: PrometheusHostsCoordinator, key: str) -> None:
+        super().__init__(coordinator, key)
+        name, icon, self._source, self._empty = OVERVIEW_TEXT[key]
+        self._attr_name = name
+        self._attr_icon = icon
+
+    @property
+    def native_value(self) -> str | None:
+        data = self.coordinator.data
+        if not data:
+            return None
+        items = getattr(data.overview, self._source)
+        return ", ".join(items)[:250] if items else self._empty
 
 
 class MirrorSensor(MirrorEntity, SensorEntity):

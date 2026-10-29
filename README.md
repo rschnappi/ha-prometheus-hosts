@@ -29,7 +29,8 @@ no longer merged, so this is how both sources end up on one device page.
 
 An extra device **Monitoring** holds the overall numbers: hosts total / down / partially down (with names), number of checks, open/critical/warning alerts (with names), `Watchdog fehlt`
 (alert pipeline broken), targets down, Kubernetes nodes not ready, failed pods, failed probes, next certificate
-expiry in days (certificates under 30 days as attribute) and number of checked certificates. With an Alertmanager URL
+expiry in days (certificates under 30 days as attribute) and number of checked certificates, plus the alert names
+and the certificates under 30 days as text sensors (Alarmliste, Zertifikate Ablaufliste). With an Alertmanager URL
 configured, alerts come from Alertmanager (silenced and inhibited ones excluded), otherwise from Prometheus.
 
 Devices carry the kind as model (VM, Hyper-V, Proxmox, Switch, USV, Access Point, Server, ...), the `site` label as

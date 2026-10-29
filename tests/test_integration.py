@@ -391,3 +391,21 @@ async def test_reconfigure_keeps_password_when_empty(hass: HomeAssistant, prom) 
     assert entry.data[CONF_PASSWORD] == "pw"
     assert entry.data[CONF_ALERTMANAGER_URL] == "https://alertmanager.example.test"
     assert entry.unique_id == "https://prometheus2.example.test"
+
+
+async def test_overview_text_lists(hass: HomeAssistant, prom) -> None:
+    entry = await setup_entry(
+        hass,
+        data={CONF_URL: URL, CONF_USERNAME: "u", CONF_PASSWORD: "p",
+              CONF_ALERTMANAGER_URL: "https://alertmanager.example.test"},
+    )
+    alert_list = entity_id(hass, entry, "sensor", OVERVIEW_KEY, "alert_list")
+    cert_list = entity_id(hass, entry, "sensor", OVERVIEW_KEY, "cert_list")
+    assert hass.states.get(alert_list).state == "keine"
+    assert hass.states.get(cert_list).state == "dns VM-DNS01 12 d"
+
+    prom.am_alerts = AM_ALERTS
+    prom.results["cert_expiry"] = []
+    await refresh(hass, entry)
+    assert hass.states.get(alert_list).state == "DiskFull, HostDown"
+    assert hass.states.get(cert_list).state == "keine unter 30 Tagen"
