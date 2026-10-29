@@ -76,7 +76,7 @@ def entity_id(hass, entry, platform, host, suffix):
 
 
 def get_device(hass, key):
-    for dev in dr.async_get(hass).devices.values():
+    for dev in dr.async_get(hass).devices:
         if (DOMAIN, key) in dev.identifiers:
             return dev
     return None
